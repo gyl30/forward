@@ -1,117 +1,31 @@
-#include <boost/asio.hpp>
-#include <cstdlib>
-#include <functional>
-#include <iostream>
-#include <memory>
-#include <utility>
-#include "protocol.h"
+#include "connection.h"
 
-class connection : public std::enable_shared_from_this<connection>
+class server_connection : public std::enable_shared_from_this<server_connection>
 {
-   private:
-    using MessageCb = std::function<void(const MsgPkg::codec::SharedVector&)>;
-    using ErrorCb = std::function<void(void)>;
+   public:
+    server_connection(boost::asio::ip::tcp::socket socket, const std::string& addr)
+        : conn(std::make_shared<connection>(std::move(socket), addr)){};
+    ~server_connection(){};
 
    public:
-    connection(boost::asio::ip::tcp::socket socket, const std::string& addr) : socket_(std::move(socket)), addr_(addr)
+    void startup()
     {
+        conn->set_on_message_cb([this, self = shared_from_this()](const auto& msg) { on_message(msg); });
+        conn->set_on_close_cb([this, self = shared_from_this()]() { on_close(); });
+        conn->startup();
     }
-
-    void start() { do_read_header(MsgPkg::kHeadSize); }
+    void shutdown() {}
+    void on_message(const MsgPkg::codec::SharedVector& msg)
+    {
+        conn->write(msg);
+    }
+    void on_close() {
+        printf("server close\n");
+    }
 
    private:
-    void do_read_header(uint32_t head_size)
-    {
-        auto cb = [self = shared_from_this(), this](const auto& buff)
-        {
-            uint32_t body_size = MsgPkg::networkToHost32(MsgPkg::peek_uint32_t(buff->data()));
-            do_read_body(body_size);
-        };
-        auto er = [self = shared_from_this(), this]() { close(); };
-        do_read_size(head_size, cb, er);
-    }
-    void do_read_body(uint32_t body_size)
-    {
-        auto cb = [self = shared_from_this(), this](const auto& buff)
-        {
-            dump_read_vector(buff);
-            do_write(buff);
-            do_read_header(MsgPkg::kHeadSize);
-        };
-        auto er = [self = shared_from_this(), this]() { close(); };
-        do_read_size(body_size, cb, er);
-    }
-
-    void do_read_size(uint32_t size, const MessageCb& cb, const ErrorCb& er)
-    {
-        int minimum_read = size;
-        auto completion_handler = [minimum_read](boost::system::error_code ec,
-                                                 std::size_t bytes_transferred) -> std::size_t
-        {
-            if (ec || bytes_transferred >= minimum_read)
-            {
-                return 0;
-            }
-            else
-            {
-                return minimum_read - bytes_transferred;
-            }
-        };
-        auto buffer = MsgPkg::codec::make_shard_vector(minimum_read);
-        boost::asio::async_read(
-            socket_, boost::asio::buffer(*buffer), completion_handler,
-            [this, buffer, self = shared_from_this(), cb, er](const boost::system::error_code& ec, std::size_t)
-            {
-                if (ec)
-                {
-                    if (er)
-                    {
-                        er();
-                    }
-                    return;
-                }
-                if (cb)
-                {
-                    cb(buffer);
-                }
-            });
-    }
-    void close()
-    {
-        socket_.close();
-        printf("close address %s", addr_.data());
-    }
-    void dump_read_vector(const auto& msg)
-    {
-        std::string buff(msg->begin(), msg->end());
-        printf("local <-- %s %s\n", addr_.data(), buff.data());
-    }
-    void dump_write_vector(const auto& msg)
-    {
-        std::string buff = MsgPkg::codec::make_decode_shard_vector(msg);
-        printf("local --> %s %s\n", addr_.data(), buff.data());
-    }
-    void do_write(const auto& msg)
-    {
-        auto buffer = MsgPkg::codec::make_encode_shard_vector(msg);
-        boost::asio::async_write(socket_, boost::asio::buffer(*buffer),
-                                 [this, buffer, self = shared_from_this()](std::error_code ec, std::size_t)
-                                 {
-                                     if (ec)
-                                     {
-                                         close();
-                                         return;
-                                     }
-                                     else
-                                     {
-                                         dump_write_vector(buffer);
-                                     }
-                                 });
-    }
-    std::string addr_;
-    boost::asio::ip::tcp::socket socket_;
+    std::shared_ptr<connection> conn;
 };
-
 class server
 {
    public:
@@ -152,7 +66,7 @@ class server
                     }
                     else
                     {
-                        std::make_shared<connection>(std::move(socket), address)->start();
+                        std::make_shared<server_connection>(std::move(socket), address)->startup();
                     }
                 }
 
@@ -166,15 +80,9 @@ int main(int argc, char* argv[])
 {
     try
     {
-        if (argc != 2)
-        {
-            std::cerr << "Usage: async_tcp_echo_server <port>\n";
-            return 1;
-        }
-
         boost::asio::io_context io_context;
 
-        server s(io_context, std::atoi(argv[1]));
+        server s(io_context, 3200);
 
         io_context.run();
     }

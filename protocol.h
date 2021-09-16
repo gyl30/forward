@@ -1,6 +1,6 @@
 #ifndef __PROTOCOL_H__
 #define __PROTOCOL_H__
-
+#include <inttypes.h>
 #include <stdint.h>
 #ifdef __MACH__
 #include <libkern/OSByteOrder.h>
@@ -18,7 +18,7 @@ inline uint32_t hostToNetwork32(uint32_t host32) { return htobe32(host32); }
 inline uint32_t peek_uint32_t(void* ptr)
 {
     uint32_t x = 0;
-    memcpy(ptr, &x, sizeof x);
+    memcpy(&x, ptr, sizeof x);
     return x;
 }
 
@@ -40,16 +40,20 @@ struct codec
     }
     static SharedVector make_encode_shard_vector(const SharedVector& msg)
     {
-        auto x = MsgPkg::hostToNetwork32(msg->size());
-        auto v = make_shard_vector(MsgPkg::kHeadSize + msg->size());
-        const char* d = (const char*)&x;
-        std::copy(d, d + MsgPkg::kHeadSize, v->begin());
+        std::size_t msg_size = msg->size();
+        auto v = make_shard_vector(MsgPkg::kHeadSize + msg_size);
+
+        auto x = MsgPkg::hostToNetwork32(msg_size);
+        printf("encode msg size %zu to network %" PRIu32 "\n", msg_size, x);
+        memcpy(v->data(), &x, MsgPkg::kHeadSize);
         std::copy(msg->begin(), msg->end(), v->begin() + MsgPkg::kHeadSize);
         return v;
     }
     static std::string make_decode_shard_vector(const SharedVector& msg)
     {
+        std::size_t msg_size = msg->size();
         auto x = MsgPkg::networkToHost32(MsgPkg::peek_uint32_t(msg->data()));
+        printf("decode network msg size %zu to host %" PRIu32 "\n", msg_size, x);
         assert(x == msg->size() - MsgPkg::kHeadSize);
         return std::string(msg->begin() + MsgPkg::kHeadSize, msg->end());
     }
