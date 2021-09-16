@@ -162,7 +162,6 @@ class server
 
     boost::asio::ip::tcp::acceptor acceptor_;
 };
-
 int main(int argc, char* argv[])
 {
     try

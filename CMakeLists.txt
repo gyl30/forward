@@ -15,9 +15,14 @@ set(Boost_USE_STATIC_RUNTIME OFF)
 find_package(Boost COMPONENTS system context)
 find_package(Threads REQUIRED)
 
-add_executable(${PROJECT_NAME} main.cpp)
+add_executable(server server.cpp)
+add_executable(client client.cpp)
 
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(server
+        Threads::Threads
+        ${Boost_LIBRARIES}
+        )
+target_link_libraries(client
         Threads::Threads
         ${Boost_LIBRARIES}
         )
