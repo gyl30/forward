@@ -2,6 +2,7 @@
 #define __PROTOCOL_H__
 #include <inttypes.h>
 #include <stdint.h>
+#include "log.h"
 #ifdef __MACH__
 #include <libkern/OSByteOrder.h>
 #define htobe32(x) OSSwapHostToBigInt32(x)
@@ -42,9 +43,8 @@ struct codec
     {
         std::size_t msg_size = msg->size();
         auto v = make_shard_vector(MsgPkg::kHeadSize + msg_size);
-
         auto x = MsgPkg::hostToNetwork32(msg_size);
-        printf("encode msg size %zu to network %" PRIu32 "\n", msg_size, x);
+        LOG_DEBUG << "encode msg size " << msg_size << " to network " << x;
         memcpy(v->data(), &x, MsgPkg::kHeadSize);
         std::copy(msg->begin(), msg->end(), v->begin() + MsgPkg::kHeadSize);
         return v;
@@ -53,7 +53,7 @@ struct codec
     {
         std::size_t msg_size = msg->size();
         auto x = MsgPkg::networkToHost32(MsgPkg::peek_uint32_t(msg->data()));
-        printf("decode network msg size %zu to host %" PRIu32 "\n", msg_size, x);
+        LOG_DEBUG << "decode network msg size " << msg_size << " to host " << x;
         assert(x == msg->size() - MsgPkg::kHeadSize);
         return std::string(msg->begin() + MsgPkg::kHeadSize, msg->end());
     }

@@ -1,10 +1,10 @@
 #include "connection.h"
+#include "log.h"
 
 class server_connection : public std::enable_shared_from_this<server_connection>
 {
    public:
-    server_connection(boost::asio::ip::tcp::socket socket, const std::string& addr)
-        : conn(std::make_shared<connection>(std::move(socket), addr)){};
+    server_connection(boost::asio::ip::tcp::socket socket) : conn(std::make_shared<connection>(std::move(socket))){};
     ~server_connection(){};
 
    public:
@@ -15,13 +15,8 @@ class server_connection : public std::enable_shared_from_this<server_connection>
         conn->startup();
     }
     void shutdown() {}
-    void on_message(const MsgPkg::codec::SharedVector& msg)
-    {
-        conn->write(msg);
-    }
-    void on_close() {
-        printf("server close\n");
-    }
+    void on_message(const MsgPkg::codec::SharedVector& msg) { conn->write(msg); }
+    void on_close() { LOG_DEBUG << "server close"; }
 
    private:
     std::shared_ptr<connection> conn;
@@ -36,22 +31,6 @@ class server
     }
 
    private:
-    static std::string socket_address(const boost::asio::ip::tcp::socket& socket)
-    {
-        boost::system::error_code ec;
-        auto ed = socket.remote_endpoint(ec);
-        if (ec)
-        {
-            return "";
-        }
-        std::string address = ed.address().to_string(ec);
-        if (ec)
-        {
-            return "";
-        }
-        return address;
-    }
-
     void do_accept()
     {
         acceptor_.async_accept(
@@ -59,15 +38,7 @@ class server
             {
                 if (!ec)
                 {
-                    auto address = socket_address(socket);
-                    if (address.empty())
-                    {
-                        socket.close();
-                    }
-                    else
-                    {
-                        std::make_shared<server_connection>(std::move(socket), address)->startup();
-                    }
+                    std::make_shared<server_connection>(std::move(socket))->startup();
                 }
 
                 do_accept();
@@ -76,6 +47,7 @@ class server
 
     boost::asio::ip::tcp::acceptor acceptor_;
 };
+
 int main(int argc, char* argv[])
 {
     try
@@ -88,7 +60,7 @@ int main(int argc, char* argv[])
     }
     catch (std::exception& e)
     {
-        std::cerr << "Exception: " << e.what() << "\n";
+        LOG_ERROR << "Exception: " << e.what();
     }
 
     return 0;

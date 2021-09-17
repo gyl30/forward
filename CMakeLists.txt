@@ -18,8 +18,8 @@ set(Boost_USE_STATIC_RUNTIME OFF)
 find_package(Boost COMPONENTS system context)
 find_package(Threads REQUIRED)
 
-add_executable(server server.cpp)
-add_executable(client client.cpp)
+add_executable(server server.cpp log.h)
+add_executable(client client.cpp log.h)
 
 target_link_libraries(server
         Threads::Threads

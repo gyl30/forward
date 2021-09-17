@@ -1,29 +1,13 @@
 #include "connection.h"
-static std::string socket_address(const boost::asio::ip::tcp::socket& socket)
-{
-    boost::system::error_code ec;
-    auto ed = socket.remote_endpoint(ec);
-    if (ec)
-    {
-        return "";
-    }
-    std::string address = ed.address().to_string(ec);
-    if (ec)
-    {
-        return "";
-    }
-    return address;
-}
-
+#include "log.h"
 class client : public std::enable_shared_from_this<client>
 {
    public:
-    client(boost::asio::ip::tcp::socket socket, const std::string& addr)
-        : conn(std::make_shared<connection>(std::move(socket), addr))
+    client(boost::asio::ip::tcp::socket socket) : conn(std::make_shared<connection>(std::move(socket)))
     {
-        printf("client\n");
+        LOG_DEBUG << "client " << conn->address();
     };
-    ~client() { printf("~client \n"); };
+    ~client() { LOG_DEBUG << "~client " << conn->address(); };
 
    public:
     void startup()
@@ -39,12 +23,10 @@ class client : public std::enable_shared_from_this<client>
     void on_message(const MsgPkg::codec::SharedVector& msg)
     {
         std::string m(msg->begin(), msg->end());
-        printf("%s\n", m.data());
+        LOG_DEBUG << "read " << m;
+        conn->write(m);
     }
-    void on_close()
-    {
-        printf("client close\n");
-    }
+    void on_close() { LOG_WAR << "client close"; }
 
    private:
     std::shared_ptr<connection> conn;
@@ -53,6 +35,7 @@ int main(int argc, char* argv[])
 {
     try
     {
+        LOG_INFO << "start";
         boost::asio::io_service io_service;
         boost::asio::ip::tcp::socket s(io_service);
         boost::asio::ip::tcp::endpoint end_point(boost::asio::ip::address::from_string("127.0.0.1"), 3200);
@@ -62,19 +45,15 @@ int main(int argc, char* argv[])
         {
             return -1;
         }
-        std::string address = socket_address(s);
-        if (address.empty())
-        {
-            return -1;
-        }
-        auto cli = std::make_shared<client>(std::move(s), address);
-        cli->startup();
+
+        std::make_shared<client>(std::move(s))->startup();
+
         io_service.run();
-        printf("hello world\n");
+        LOG_INFO << "quit";
     }
     catch (std::exception& e)
     {
-        std::cerr << "Exception: " << e.what() << "\n";
+        LOG_ERROR << "Exception: " << e.what();
     }
 
     return 0;
