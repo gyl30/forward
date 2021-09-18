@@ -37,14 +37,14 @@ class connection : public std::enable_shared_from_this<connection>
     {
         address_ = socket_address(socket_);
     }
-    void set_on_message_cb(const MessageCb& cb) { cb_ = cb; }
-    void set_on_close_cb(const ErrorCb& cb) { er_ = cb; }
+    void set_on_message_cb(const std::function<void(const std::string&)>& cb) { msg_cb_ = cb; }
+    void set_on_close_cb(const std::function<void(void)>& cb) { close_cb_ = cb; }
+
     void startup() { do_read_header(MsgPkg::kHeadSize); }
+    void shutdown() { do_shutdown(); }
 
     void write(const std::string& msg) { do_write(msg); }
-    void write(const MsgPkg::codec::SharedVector& msg) { do_write(msg); }
     std::string address() const { return address_; }
-    void shutdown() { do_shutdown(); }
 
    private:
     void dump_read_vector(const MsgPkg::codec::SharedVector& msg)
@@ -70,15 +70,15 @@ class connection : public std::enable_shared_from_this<connection>
 
     void do_shutdown()
     {
-        cb_ = nullptr;
-        er_ = nullptr;
+        msg_cb_ = nullptr;
+        close_cb_ = nullptr;
         close();
     }
     void close()
     {
-        if (er_)
+        if (close_cb_)
         {
-            er_();
+            close_cb_();
         }
         socket_.close();
     }
@@ -100,9 +100,9 @@ class connection : public std::enable_shared_from_this<connection>
         auto cb = [self = shared_from_this(), this](const auto& buff)
         {
             dump_read_vector(buff);
-            if (cb_)
+            if (msg_cb_)
             {
-                cb_(buff);
+                msg_cb_(std::string(buff->begin(), buff->end()));
             }
             do_read_header(MsgPkg::kHeadSize);
         };
@@ -132,6 +132,10 @@ class connection : public std::enable_shared_from_this<connection>
             if (ec)
             {
                 if (ec == boost::asio::error::bad_descriptor)
+                {
+                    LOG_WAR << address_ << " closed";
+                }
+                else if (ec == boost::asio::error::connection_reset)
                 {
                     LOG_WAR << address_ << " closed";
                 }
@@ -167,6 +171,10 @@ class connection : public std::enable_shared_from_this<connection>
                 {
                     LOG_WAR << address_ << " closed";
                 }
+                else if (ec == boost::asio::error::connection_reset)
+                {
+                    LOG_WAR << address_ << " closed";
+                }
                 else if (ec == boost::asio::error::eof)
                 {
                     LOG_WAR << address_ << " closed";
@@ -189,8 +197,8 @@ class connection : public std::enable_shared_from_this<connection>
 
    private:
     std::string address_;
-    MessageCb cb_;
-    ErrorCb er_;
+    std::function<void(const std::string&)> msg_cb_;
+    std::function<void(void)> close_cb_;
     boost::asio::ip::tcp::socket socket_;
     boost::asio::strand<boost::asio::executor> s;
 };

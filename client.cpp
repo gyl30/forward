@@ -77,11 +77,10 @@ class client : public std::enable_shared_from_this<client>
     }
 
    private:
-    void on_message(const MsgPkg::codec::SharedVector& msg)
+    void on_message(const std::string& msg)
     {
-        std::string m(msg->begin(), msg->end());
-        LOG_DEBUG << "read " << m;
-        conn->write(m);
+        LOG_DEBUG << "read " << msg;
+        conn->write(msg);
     }
     void on_close() { LOG_WAR << "client close"; }
 
