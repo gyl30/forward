@@ -11,6 +11,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#include <iomanip>
 
 #define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
@@ -19,7 +20,7 @@ class LogHelp
    public:
     LogHelp(const char* f, int l, const char* v) : f(f), line(l)
     {
-        ss << format_time() << " " << syscall(__NR_gettid) << " " << v << " ";
+        ss << format_time() << " " << syscall(__NR_gettid) << " " << std::left << std::setw(5) << v << " ";
     }
     ~LogHelp()
     {
@@ -47,6 +48,7 @@ class LogHelp
                  tm_time.tm_mday, tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec, microseconds);
         return buf;
     }
+
    private:
     std::stringstream ss;
     const char* f;
@@ -55,6 +57,6 @@ class LogHelp
 
 #define LOG_INFO LogHelp(__FILENAME__, __LINE__, "INFO")
 #define LOG_DEBUG LogHelp(__FILENAME__, __LINE__, "DEBUG")
-#define LOG_WAR LogHelp(__FILENAME__, __LINE__, "WAR")
+#define LOG_WAR LogHelp(__FILENAME__, __LINE__, "WARN")
 #define LOG_ERROR LogHelp(__FILENAME__, __LINE__, "ERROR")
 #endif    // FORWARD_LOG_H
