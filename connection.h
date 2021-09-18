@@ -9,7 +9,7 @@
 #include "log.h"
 class connection : public std::enable_shared_from_this<connection>
 {
-   public:
+   private:
     using MessageCb = std::function<void(const MsgPkg::codec::SharedVector&)>;
     using ErrorCb = std::function<void(void)>;
 
@@ -29,7 +29,7 @@ class connection : public std::enable_shared_from_this<connection>
         }
         uint16_t port = ed.port();
 
-        return address + std::to_string(port);
+        return address + ":" + std::to_string(port);
     }
 
    public:
@@ -44,6 +44,44 @@ class connection : public std::enable_shared_from_this<connection>
     void write(const std::string& msg) { do_write(msg); }
     void write(const MsgPkg::codec::SharedVector& msg) { do_write(msg); }
     std::string address() const { return address_; }
+    void shutdown() { do_shutdown(); }
+
+   private:
+    void dump_read_vector(const MsgPkg::codec::SharedVector& msg)
+    {
+        std::string buff(msg->begin(), msg->end());
+        LOG_DEBUG << "local <-- " << address_ << " " << buff;
+    }
+    void dump_write_vector(const MsgPkg::codec::SharedVector& msg)
+    {
+        std::string buff = MsgPkg::codec::make_decode_shard_vector(msg);
+        LOG_DEBUG << "local --> " << address_ << " " << buff;
+    }
+    void do_write(const std::string& msg)
+    {
+        auto buffer = MsgPkg::codec::make_encode_shard_vector(msg);
+        do_write_help(buffer);
+    }
+    void do_write(const MsgPkg::codec::SharedVector& msg)
+    {
+        auto buffer = MsgPkg::codec::make_encode_shard_vector(msg);
+        do_write_help(buffer);
+    }
+
+    void do_shutdown()
+    {
+        cb_ = nullptr;
+        er_ = nullptr;
+        close();
+    }
+    void close()
+    {
+        if (er_)
+        {
+            er_();
+        }
+        socket_.close();
+    }
 
    private:
     void do_read_header(uint32_t head_size)
@@ -89,11 +127,22 @@ class connection : public std::enable_shared_from_this<connection>
         };
         auto buffer = MsgPkg::codec::make_shard_vector(minimum_read);
 
-        auto fn = [buffer, self = shared_from_this(), cb, er](const boost::system::error_code& ec, std::size_t)
+        auto fn = [buffer, this, self = shared_from_this(), cb, er](const boost::system::error_code& ec, std::size_t)
         {
             if (ec)
             {
-                LOG_ERROR << "read failed " << ec.message();
+                if (ec == boost::asio::error::bad_descriptor)
+                {
+                    LOG_WAR << address_ << " closed";
+                }
+                else if (ec == boost::asio::error::eof)
+                {
+                    LOG_WAR << address_ << " closed";
+                }
+                else
+                {
+                    LOG_ERROR << "read from " << address_ << " failed " << ec.message();
+                }
                 if (er)
                 {
                     er();
@@ -108,43 +157,24 @@ class connection : public std::enable_shared_from_this<connection>
         auto s_fn = boost::asio::bind_executor(s, fn);
         boost::asio::async_read(socket_, boost::asio::buffer(buffer->data(), buffer->size()), completion_handler, s_fn);
     }
-    void close()
-    {
-        if (er_)
-        {
-            er_();
-        }
-        socket_.close();
-    }
-    void dump_read_vector(const MsgPkg::codec::SharedVector& msg)
-    {
-        std::string buff(msg->begin(), msg->end());
-        LOG_DEBUG << "local <-- " << address_ << " " << buff;
-    }
-    void dump_write_vector(const MsgPkg::codec::SharedVector& msg)
-    {
-        std::string buff = MsgPkg::codec::make_decode_shard_vector(msg);
-        LOG_DEBUG << "local --> " << address_ << " " << buff;
-    }
-    void do_write(const std::string& msg)
-    {
-        auto buffer = MsgPkg::codec::make_encode_shard_vector(msg);
-        do_write_help(buffer);
-    }
-    void do_write(const MsgPkg::codec::SharedVector& msg)
-    {
-        auto buffer = MsgPkg::codec::make_encode_shard_vector(msg);
-        do_write_help(buffer);
-    }
-
-   private:
     void do_write_help(const MsgPkg::codec::SharedVector& buffer)
     {
-        auto fn = [this, buffer, self = shared_from_this()](std::error_code ec, std::size_t)
+        auto fn = [this, buffer, self = shared_from_this()](boost::system::error_code ec, std::size_t)
         {
             if (ec)
             {
-                LOG_ERROR << "write failed " << ec.message();
+                if (ec == boost::asio::error::bad_descriptor)
+                {
+                    LOG_WAR << address_ << " closed";
+                }
+                else if (ec == boost::asio::error::eof)
+                {
+                    LOG_WAR << address_ << " closed";
+                }
+                else
+                {
+                    LOG_ERROR << "write to " << address_ << " failed " << ec.message();
+                }
                 close();
                 return;
             }
