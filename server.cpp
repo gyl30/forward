@@ -59,6 +59,7 @@ class server
     void shutdown() { do_shutdown(); }
     void set_on_message_cb(const std::function<void(const ConnectionPtr&, const std::string&)>& cb) { msg_cb_ = cb; }
     void set_on_close_cb(const std::function<void(const ConnectionPtr&)>& cb) { close_cb_ = cb; }
+    void set_on_connected_cb(const std::function<void(const ConnectionPtr&)>& cb) { connected_cb_ = cb; }
 
    private:
     void do_shutdown()
@@ -88,6 +89,15 @@ class server
         conn->set_on_message_cb([this](const ConnectionPtr& conn, const std::string& msg) { on_message(conn, msg); });
         conn->set_on_close_cb([this](const ConnectionPtr& conn) { on_close(conn); });
         conn->startup();
+        on_connected(conn);
+    }
+
+    void on_connected(const ConnectionPtr& conn)
+    {
+        if (connected_cb_)
+        {
+            connected_cb_(conn);
+        }
     }
     void on_message(const ConnectionPtr& conn, const std::string& msg)
     {
@@ -111,6 +121,7 @@ class server
 
    private:
     std::function<void(const ConnectionPtr&)> close_cb_;
+    std::function<void(const ConnectionPtr&)> connected_cb_;
     std::function<void(const ConnectionPtr&, const std::string&)> msg_cb_;
     boost::asio::ip::tcp::acceptor acceptor_;
 };
@@ -126,6 +137,7 @@ class service
     {
         s.set_on_message_cb([this](const ConnectionPtr& conn, const std::string& msg) { on_message(conn, msg); });
         s.set_on_close_cb([this](const ConnectionPtr& conn) { on_close(conn); });
+        s.set_on_connected_cb([this](const ConnectionPtr& conn) { on_connected(conn); });
         s.startup();
     }
     void shutdown()
@@ -141,6 +153,12 @@ class service
     {
         LOG_DEBUG << conn->address() << " " << msg;
         conn->write(msg);
+    }
+
+    void on_connected(const ConnectionPtr& conn)
+    {
+        LOG_DEBUG << conn->address() << " "
+                  << "connected";
     }
     void on_close(const ConnectionPtr& conn)
     {
