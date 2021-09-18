@@ -15,7 +15,11 @@ class server_connection : public std::enable_shared_from_this<server_connection>
         conn->startup();
     }
     void shutdown() {}
-    void on_message(const MsgPkg::codec::SharedVector& msg) { conn->write(msg); }
+    void on_message(const MsgPkg::codec::SharedVector& msg)
+    {
+        conn->write(msg);
+        conn->shutdown();
+    }
     void on_close() { LOG_DEBUG << "server close"; }
 
    private:
