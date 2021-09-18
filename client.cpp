@@ -5,8 +5,8 @@
 class client : public std::enable_shared_from_this<client>
 {
    public:
-    client(const std::string& ip, uint16_t port) : ip(ip), port(port) { LOG_DEBUG << "client "; };
-    ~client() { LOG_DEBUG << "~client "; };
+    client(const std::string& ip, uint16_t port) : ip(ip), port(port) { LOG_DEBUG << "client"; };
+    ~client() { LOG_DEBUG << "~client"; };
 
    public:
     void connect()
@@ -18,19 +18,19 @@ class client : public std::enable_shared_from_this<client>
    private:
     void do_run()
     {
-        LOG_DEBUG << "main loop start ";
+        LOG_DEBUG << "main loop start";
         boost::system::error_code ec;
         io_service.run(ec);
         if (ec)
         {
             LOG_ERROR << "main loop failed " << ec.message();
         }
-        LOG_DEBUG << "main loop finish ";
+        LOG_DEBUG << "main loop finish";
     }
 
     void do_connect()
     {
-        LOG_DEBUG << "do connect ";
+        LOG_DEBUG << "do connect";
         auto fn = [this, self(shared_from_this())](const boost::system::error_code& ec)
         {
             if (ec)
@@ -62,7 +62,7 @@ class client : public std::enable_shared_from_this<client>
         {
             timer = std::make_unique<boost::asio::steady_timer>(io_service);
         }
-        LOG_DEBUG << "run timer ";
+        LOG_DEBUG << "run timer";
         timer->expires_from_now(std::chrono::seconds(3));
         timer->async_wait(
             [this, self(shared_from_this())](boost::system::error_code ec)
