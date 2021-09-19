@@ -68,6 +68,8 @@ class connection : public std::enable_shared_from_this<connection>
     void startup() { do_read_header(MsgPkg::kHeadSize); }
     void shutdown() { do_shutdown(); }
 
+    void set_read_timeout(uint32_t timeout) { this->timeout = timeout; }
+
     void write(const std::string& msg) { do_write(msg); }
     std::string address() const { return address_; }
 
@@ -104,8 +106,47 @@ class connection : public std::enable_shared_from_this<connection>
         if (close_cb_)
         {
             close_cb_();
+            close_cb_ = nullptr;
         }
-        socket_.close();
+        boost::system::error_code ec;
+        if (timer)
+        {
+            timer->cancel(ec);
+            if (ec)
+            {
+                LOG_ERROR << address_ << " cancel timer faled " << ec.message();
+            }
+            else
+            {
+                LOG_DEBUG << address_ << " cancel timer";
+            }
+            timer.reset();
+            timer = nullptr;
+        }
+        if (!socket_.is_open())
+        {
+            LOG_WAR << address_ << " is closed";
+            return;
+        }
+        // socket_.cancel(ec);
+        // if (ec)
+        //{
+        // LOG_ERROR << address_ << " socket cancel faled " << ec.message();
+        //}
+        // else
+        //{
+        // LOG_DEBUG << address_ << " socket cancel ";
+        //}
+
+        socket_.close(ec);
+        if (ec)
+        {
+            LOG_ERROR << address_ << " close socket faled " << ec.message();
+        }
+        else
+        {
+            LOG_DEBUG << address_ << " close socket";
+        }
     }
 
    private:
@@ -137,6 +178,7 @@ class connection : public std::enable_shared_from_this<connection>
 
     void do_read_size(uint32_t size, const MessageCb& cb, const ErrorCb& er)
     {
+         start_wait_input_timer();
         uint32_t minimum_read = size;
         auto completion_handler = [minimum_read](boost::system::error_code ec,
                                                  std::size_t bytes_transferred) -> std::size_t
@@ -219,12 +261,53 @@ class connection : public std::enable_shared_from_this<connection>
         auto s_fn = boost::asio::bind_executor(s, fn);
         boost::asio::async_write(socket_, boost::asio::buffer(*buffer), s_fn);
     }
+    void start_wait_input_timer()
+    {
+        if (!timeout)
+        {
+            return;
+        }
+        if (!timer)
+        {
+            timer = std::make_unique<boost::asio::steady_timer>(s.get_inner_executor());
+        }
+        if (timer)
+        {
+            run_timer();
+        }
+    }
+    void run_timer()
+    {
+        timer->expires_after(std::chrono::seconds(timeout));
+        auto fn = [this, self(shared_from_this())](boost::system::error_code ec)
+        {
+            if (ec)
+            {
+                LOG_ERROR << "timer failed " << ec.message();
+                return;
+            }
+            do_timeout();
+            run_timer();
+        };
+        auto s_fn = boost::asio::bind_executor(s, fn);
+        timer->async_wait(s_fn);
+    }
+    void do_timeout()
+    {
+        if (timer->expiry() <= boost::asio::steady_timer::clock_type::now())
+        {
+            close();
+        }
+    }
 
    private:
-    std::string address_;
-    std::function<void(const std::string&)> msg_cb_;
     std::function<void(void)> close_cb_;
+    std::function<void(const std::string&)> msg_cb_;
+
+    uint32_t timeout = 0;
+    std::string address_;
     boost::asio::ip::tcp::socket socket_;
+    std::unique_ptr<boost::asio::steady_timer> timer;
     boost::asio::strand<boost::asio::ip::tcp::socket::executor_type> s;
 };
 

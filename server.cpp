@@ -16,9 +16,10 @@ class server_connection : public std::enable_shared_from_this<server_connection>
     {
         conn->set_on_message_cb([this, self = shared_from_this()](const auto& msg) { on_message(msg); });
         conn->set_on_close_cb([this, self = shared_from_this()]() { on_close(); });
+        conn->set_read_timeout(10);
         conn->startup();
     }
-    void shutdown() {}
+    void shutdown() { conn->shutdown(); }
     void set_on_message_cb(const std::function<void(const ConnectionPtr&, const std::string&)>& cb) { msg_cb_ = cb; }
     void set_on_close_cb(const std::function<void(const ConnectionPtr&)>& cb) { close_cb_ = cb; }
     std::string address() const { return conn->address(); }
@@ -162,13 +163,26 @@ class service
         io_context.stop();
     }
 
-    void run() { io_context.run(); }
+    void run()
+    {
+        boost::system::error_code ec;
+        io_context.run(ec);
+        if (ec)
+        {
+            LOG_ERROR << "server stop failed " << ec.message();
+        }
+        else
+        {
+            LOG_DEBUG << "server stop ";
+        }
+    }
 
    private:
     void on_message(const ConnectionPtr& conn, const std::string& msg)
     {
         LOG_DEBUG << conn->address() << " " << msg;
         conn->write(msg);
+        conn->shutdown();
     }
 
     void on_connected(const ConnectionPtr& conn)
