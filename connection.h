@@ -33,7 +33,8 @@ class connection : public std::enable_shared_from_this<connection>
     }
 
    public:
-    connection(boost::asio::ip::tcp::socket socket) : socket_(std::move(socket)), s(socket_.get_executor())
+    connection(boost::asio::ip::tcp::socket socket)
+        : socket_(std::move(socket)), s(socket_.get_executor())
     {
         address_ = socket_address(socket_);
         if (address_.empty())
@@ -223,7 +224,7 @@ class connection : public std::enable_shared_from_this<connection>
     std::function<void(const std::string&)> msg_cb_;
     std::function<void(void)> close_cb_;
     boost::asio::ip::tcp::socket socket_;
-    boost::asio::strand<boost::asio::executor> s;
+    boost::asio::strand<boost::asio::ip::tcp::socket::executor_type> s;
 };
 
 #endif    //__CONNECTION_H__

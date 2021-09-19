@@ -17,10 +17,17 @@
 
 class LogHelp
 {
+   private:
+#ifdef __MACH__
+    static pid_t gettid() { return pthread_mach_thread_np(pthread_self()); }
+#else
+    static pid_t gettid() { return static_cast<pid_t>(::syscall(SYS_gettid)); }
+#endif
+
    public:
     LogHelp(const char* f, int l, const char* v) : f(f), line(l)
     {
-        ss << format_time() << " " << syscall(__NR_gettid) << " " << std::left << std::setw(5) << v << " ";
+        ss << format_time() << " " << gettid() << " " << std::left << std::setw(5) << v << " ";
     }
     ~LogHelp()
     {
@@ -40,10 +47,10 @@ class LogHelp
         char buf[64] = {0};
         struct timeval tv;
         gettimeofday(&tv, NULL);
-        int64_t seconds = tv.tv_sec;
+        time_t seconds = tv.tv_sec;
         int microseconds = tv.tv_usec;
         struct tm tm_time;
-        gmtime_r(&seconds, &tm_time);
+        ::gmtime_r(&seconds, &tm_time);
         snprintf(buf, sizeof(buf), "%4d%02d%02d %02d:%02d:%02d.%06d", tm_time.tm_year + 1900, tm_time.tm_mon + 1,
                  tm_time.tm_mday, tm_time.tm_hour, tm_time.tm_min, tm_time.tm_sec, microseconds);
         return buf;
