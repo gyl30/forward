@@ -178,7 +178,7 @@ class connection : public std::enable_shared_from_this<connection>
 
     void do_read_size(uint32_t size, const MessageCb& cb, const ErrorCb& er)
     {
-         start_wait_input_timer();
+        start_wait_input_timer();
         uint32_t minimum_read = size;
         auto completion_handler = [minimum_read](boost::system::error_code ec,
                                                  std::size_t bytes_transferred) -> std::size_t
@@ -269,7 +269,11 @@ class connection : public std::enable_shared_from_this<connection>
         }
         if (!timer)
         {
-            timer = std::make_unique<boost::asio::steady_timer>(s.get_inner_executor());
+            #if BOOST_VERSION < 107000
+                timer = std::make_unique<boost::asio::steady_timer>(socket_.get_io_context());
+            #else
+                timer = std::make_unique<boost::asio::steady_timer>(s);
+            #endif
         }
         if (timer)
         {
@@ -287,7 +291,6 @@ class connection : public std::enable_shared_from_this<connection>
                 return;
             }
             do_timeout();
-            run_timer();
         };
         auto s_fn = boost::asio::bind_executor(s, fn);
         timer->async_wait(s_fn);
@@ -297,6 +300,10 @@ class connection : public std::enable_shared_from_this<connection>
         if (timer->expiry() <= boost::asio::steady_timer::clock_type::now())
         {
             close();
+        }
+        else
+        {
+            run_timer();
         }
     }
 
