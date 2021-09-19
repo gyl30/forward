@@ -1,6 +1,7 @@
 #include "connection.h"
 #include "log.h"
 #include <chrono>
+#include <thread>
 
 class client : public std::enable_shared_from_this<client>
 {
@@ -53,9 +54,28 @@ class client : public std::enable_shared_from_this<client>
         conn->set_on_message_cb([this, self = shared_from_this()](const auto& msg) { on_message(msg); });
         conn->set_on_close_cb([this, self = shared_from_this()]() { on_close(); });
         conn->startup();
-        conn->write("hello");
+        run_keep_timer();
     }
 
+    void run_keep_timer()
+    {
+        if (!keep_timer)
+        {
+            keep_timer = std::make_unique<boost::asio::steady_timer>(io_service);
+        }
+        keep_timer->expires_from_now(std::chrono::milliseconds(10));
+        keep_timer->async_wait(
+            [this, self(shared_from_this())](boost::system::error_code ec)
+            {
+                if (ec)
+                {
+                    LOG_ERROR << "keep timer failed " << ec.message();
+                    return;
+                }
+                conn->write("hello");
+                run_keep_timer();
+            });
+    }
     void run_timer()
     {
         if (!timer)
@@ -77,12 +97,25 @@ class client : public std::enable_shared_from_this<client>
     }
 
    private:
-    void on_message(const std::string& msg)
+    void on_message(const std::string& msg) { LOG_DEBUG << "read " << msg; }
+    void on_close()
     {
-        LOG_DEBUG << "read " << msg;
-        conn->write(msg);
+        LOG_WAR << "client close";
+        close_timer();
+        do_connect();
     }
-    void on_close() { LOG_WAR << "client close"; }
+    void close_timer()
+    {
+        boost::system::error_code ec;
+        if (timer)
+        {
+            timer->cancel(ec);
+        }
+        if (keep_timer)
+        {
+            keep_timer->cancel(ec);
+        }
+    }
 
    private:
     std::string ip;
@@ -90,6 +123,7 @@ class client : public std::enable_shared_from_this<client>
     boost::asio::io_service io_service;
     std::unique_ptr<boost::asio::ip::tcp::socket> s;
     std::unique_ptr<boost::asio::steady_timer> timer;
+    std::unique_ptr<boost::asio::steady_timer> keep_timer;
     std::shared_ptr<connection> conn;
 };
 
