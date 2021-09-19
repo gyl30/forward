@@ -36,6 +36,29 @@ class connection : public std::enable_shared_from_this<connection>
     connection(boost::asio::ip::tcp::socket socket) : socket_(std::move(socket)), s(socket_.get_executor())
     {
         address_ = socket_address(socket_);
+        if (address_.empty())
+        {
+            LOG_ERROR << "socket address failed";
+        }
+        boost::system::error_code ec;
+        socket_.set_option(boost::asio::ip::tcp::no_delay(true), ec);
+        if (ec)
+        {
+            LOG_ERROR << address_ << " set no delay failed " << ec.message();
+        }
+        boost::asio::socket_base::receive_buffer_size r_option(4096);
+        socket_.set_option(r_option, ec);
+        if (ec)
+        {
+            LOG_ERROR << address_ << " set receive buffer size failed " << ec.message();
+        }
+
+        boost::asio::socket_base::send_buffer_size w_option(4096);
+        socket_.set_option(w_option, ec);
+        if (ec)
+        {
+            LOG_ERROR << address_ << " set send buffer size failed " << ec.message();
+        }
     }
     void set_on_message_cb(const std::function<void(const std::string&)>& cb) { msg_cb_ = cb; }
     void set_on_close_cb(const std::function<void(void)>& cb) { close_cb_ = cb; }
