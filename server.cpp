@@ -66,7 +66,23 @@ class server
     {
         boost::system::error_code ec;
         acceptor_.cancel(ec);
+        if (ec)
+        {
+            LOG_ERROR << "acceptor cancel failed " << ec.message();
+        }
+        else
+        {
+            LOG_DEBUG << "acceptor cancel";
+        }
         acceptor_.close(ec);
+        if (ec)
+        {
+            LOG_ERROR << "acceptor close failed " << ec.message();
+        }
+        else
+        {
+            LOG_DEBUG << "acceptor close";
+        }
     }
     void do_accept()
     {

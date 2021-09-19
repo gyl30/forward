@@ -20,11 +20,13 @@ class connection : public std::enable_shared_from_this<connection>
         auto ed = socket.remote_endpoint(ec);
         if (ec)
         {
+            LOG_ERROR << "socket remote endpoint failed " << ec.message();
             return "";
         }
         std::string address = ed.address().to_string(ec);
         if (ec)
         {
+            LOG_ERROR << "socket remote address to string failed " << ec.message();
             return "";
         }
         uint16_t port = ed.port();
@@ -33,8 +35,7 @@ class connection : public std::enable_shared_from_this<connection>
     }
 
    public:
-    connection(boost::asio::ip::tcp::socket socket)
-        : socket_(std::move(socket)), s(socket_.get_executor())
+    connection(boost::asio::ip::tcp::socket socket) : socket_(std::move(socket)), s(socket_.get_executor())
     {
         address_ = socket_address(socket_);
         if (address_.empty())
