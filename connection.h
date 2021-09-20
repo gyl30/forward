@@ -5,12 +5,13 @@
 #include <functional>
 #include <memory>
 #include <utility>
+#include <string_view>
 #include "protocol.h"
 #include "log.h"
 class connection : public std::enable_shared_from_this<connection>
 {
    private:
-    using MessageCb = std::function<void(const MsgPkg::codec::SharedVector&)>;
+    using MessageCb = std::function<void(const MsgPkg::SharedVector&)>;
     using ErrorCb = std::function<void(void)>;
 
    private:
@@ -74,24 +75,25 @@ class connection : public std::enable_shared_from_this<connection>
     std::string address() const { return address_; }
 
    private:
-    void dump_read_vector(const MsgPkg::codec::SharedVector& msg)
+    void dump_read_vector(const std::string& msg) { LOG_DEBUG << "local <-- " << address_ << " " << msg; }
+    void dump_write_vector(const std::string& msg) { LOG_DEBUG << "local --> " << address_ << " " << msg; }
+
+    void dump_read_vector(std::string_view s) { LOG_DEBUG << "local <-- " << address_ << " " << s; }
+    void dump_write_vector(std::string_view s) { LOG_DEBUG << "local --> " << address_ << " " << s; }
+
+    void dump_read_vector(const MsgPkg::SharedVector& msg)
     {
-        std::string buff(msg->begin(), msg->end());
+        std::string buff = MsgPkg::codec::decode(msg);
         LOG_DEBUG << "local <-- " << address_ << " " << buff;
     }
-    void dump_write_vector(const MsgPkg::codec::SharedVector& msg)
+    void dump_write_vector(const MsgPkg::SharedVector& msg)
     {
-        std::string buff = MsgPkg::codec::make_decode_shard_vector(msg);
+        std::string buff = MsgPkg::codec::decode(msg);
         LOG_DEBUG << "local --> " << address_ << " " << buff;
     }
     void do_write(const std::string& msg)
     {
-        auto buffer = MsgPkg::codec::make_encode_shard_vector(msg);
-        do_write_help(buffer);
-    }
-    void do_write(const MsgPkg::codec::SharedVector& msg)
-    {
-        auto buffer = MsgPkg::codec::make_encode_shard_vector(msg);
+        auto buffer = MsgPkg::codec::encode(msg);
         do_write_help(buffer);
     }
 
@@ -128,15 +130,15 @@ class connection : public std::enable_shared_from_this<connection>
             LOG_WAR << address_ << " is closed";
             return;
         }
-        // socket_.cancel(ec);
-        // if (ec)
-        //{
-        // LOG_ERROR << address_ << " socket cancel faled " << ec.message();
-        //}
-        // else
-        //{
-        // LOG_DEBUG << address_ << " socket cancel ";
-        //}
+        socket_.cancel(ec);
+        if (ec)
+        {
+            LOG_ERROR << address_ << " socket cancel faled " << ec.message();
+        }
+        else
+        {
+            LOG_DEBUG << address_ << " cancel socket";
+        }
 
         socket_.close(ec);
         if (ec)
@@ -165,9 +167,9 @@ class connection : public std::enable_shared_from_this<connection>
     {
         auto cb = [self = shared_from_this(), this](const auto& buff)
         {
-            dump_read_vector(buff);
             if (msg_cb_)
             {
+                dump_read_vector(std::string_view((char*)buff->data(), buff->size()));
                 msg_cb_(std::string(buff->begin(), buff->end()));
             }
             do_read_header(MsgPkg::kHeadSize);
@@ -192,7 +194,7 @@ class connection : public std::enable_shared_from_this<connection>
                 return minimum_read - bytes_transferred;
             }
         };
-        auto buffer = MsgPkg::codec::make_shard_vector(minimum_read);
+        auto buffer = MsgPkg::make_shard_vector(minimum_read);
 
         auto fn = [buffer, this, self = shared_from_this(), cb, er](const boost::system::error_code& ec, std::size_t)
         {
@@ -228,7 +230,7 @@ class connection : public std::enable_shared_from_this<connection>
         auto s_fn = boost::asio::bind_executor(s, fn);
         boost::asio::async_read(socket_, boost::asio::buffer(buffer->data(), buffer->size()), completion_handler, s_fn);
     }
-    void do_write_help(const MsgPkg::codec::SharedVector& buffer)
+    void do_write_help(const MsgPkg::SharedVector& buffer)
     {
         auto fn = [this, buffer, self = shared_from_this()](boost::system::error_code ec, std::size_t)
         {
@@ -269,11 +271,11 @@ class connection : public std::enable_shared_from_this<connection>
         }
         if (!timer)
         {
-            #if BOOST_VERSION < 107000
-                timer = std::make_unique<boost::asio::steady_timer>(socket_.get_io_context());
-            #else
-                timer = std::make_unique<boost::asio::steady_timer>(s);
-            #endif
+#if BOOST_VERSION < 107000
+            timer = std::make_unique<boost::asio::steady_timer>(socket_.get_io_context());
+#else
+            timer = std::make_unique<boost::asio::steady_timer>(s);
+#endif
         }
         if (timer)
         {
@@ -285,12 +287,19 @@ class connection : public std::enable_shared_from_this<connection>
         timer->expires_after(std::chrono::seconds(timeout));
         auto fn = [this, self(shared_from_this())](boost::system::error_code ec)
         {
-            if (ec)
+            if (ec && ec == boost::system::errc::operation_canceled)
             {
-                LOG_ERROR << "timer failed " << ec.message();
+                //LOG_DEBUG << address_ << " timer cancel";
                 return;
             }
-            do_timeout();
+            if (ec)
+            {
+                LOG_ERROR << address_ << " timer failed " << ec.message();
+            }
+            else
+            {
+                do_timeout();
+            }
         };
         auto s_fn = boost::asio::bind_executor(s, fn);
         timer->async_wait(s_fn);

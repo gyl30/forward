@@ -182,7 +182,7 @@ class service
     {
         LOG_DEBUG << conn->address() << " " << msg;
         conn->write(msg);
-        conn->shutdown();
+        //conn->shutdown();
     }
 
     void on_connected(const ConnectionPtr& conn)

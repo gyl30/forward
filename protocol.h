@@ -2,6 +2,8 @@
 #define __PROTOCOL_H__
 #include <inttypes.h>
 #include <stdint.h>
+#include <memory>
+#include <vector>
 #include "log.h"
 #ifdef __MACH__
 #include <libkern/OSByteOrder.h>
@@ -22,25 +24,18 @@ inline uint32_t peek_uint32_t(void* ptr)
     memcpy(&x, ptr, sizeof x);
     return x;
 }
+using SharedVector = std::shared_ptr<std::vector<uint8_t>>;
+static SharedVector make_shard_vector(std::size_t size) { return std::make_shared<std::vector<uint8_t>>(size, '0'); }
+static SharedVector make_shard_vector(const std::string& msg)
+{
+    return std::make_shared<std::vector<uint8_t>>(msg.begin(), msg.end());
+}
 
 struct codec
 {
-    using SharedVector = std::shared_ptr<std::vector<uint8_t>>;
-    static SharedVector make_shard_vector(std::size_t size)
+    static SharedVector encode(const std::string& m)
     {
-        return std::make_shared<std::vector<uint8_t>>(size, '0');
-    }
-    static SharedVector make_shard_vector(const std::string& msg)
-    {
-        return std::make_shared<std::vector<uint8_t>>(msg.begin(), msg.end());
-    }
-
-    static SharedVector make_encode_shard_vector(const std::string& msg)
-    {
-        return make_encode_shard_vector(make_shard_vector(msg));
-    }
-    static SharedVector make_encode_shard_vector(const SharedVector& msg)
-    {
+        auto msg = make_shard_vector(m);
         std::size_t msg_size = msg->size();
         auto v = make_shard_vector(MsgPkg::kHeadSize + msg_size);
         auto x = MsgPkg::hostToNetwork32(msg_size);
@@ -49,7 +44,7 @@ struct codec
         std::copy(msg->begin(), msg->end(), v->begin() + MsgPkg::kHeadSize);
         return v;
     }
-    static std::string make_decode_shard_vector(const SharedVector& msg)
+    static std::string decode(const SharedVector& msg)
     {
         std::size_t msg_size = msg->size();
         auto x = MsgPkg::networkToHost32(MsgPkg::peek_uint32_t(msg->data()));
