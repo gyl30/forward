@@ -156,7 +156,7 @@ class connection : public std::enable_shared_from_this<connection>
     {
         auto cb = [self = shared_from_this(), this](const auto& buff)
         {
-            uint32_t body_size = MsgPkg::networkToHost32(MsgPkg::peek_uint32_t(buff->data()));
+            uint32_t body_size = MsgPkg::codec::body_size(buff);
             LOG_DEBUG << "read header finish body size " << body_size;
             do_read_body(body_size);
         };
@@ -289,7 +289,7 @@ class connection : public std::enable_shared_from_this<connection>
         {
             if (ec && ec == boost::system::errc::operation_canceled)
             {
-                //LOG_DEBUG << address_ << " timer cancel";
+                // LOG_DEBUG << address_ << " timer cancel";
                 return;
             }
             if (ec)
