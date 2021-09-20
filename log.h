@@ -2,8 +2,8 @@
 // Created by gyl on 2021/9/17.
 //
 
-#ifndef FORWARD_LOG_H
-#define FORWARD_LOG_H
+#ifndef __LOG_H__
+#define __LOG_H__
 #include <sstream>
 #include <string.h>
 #include <string>
@@ -66,4 +66,4 @@ class LogHelp
 #define LOG_DEBUG LogHelp(__FILENAME__, __LINE__, "DEBUG")
 #define LOG_WAR LogHelp(__FILENAME__, __LINE__, "WARN")
 #define LOG_ERROR LogHelp(__FILENAME__, __LINE__, "ERROR")
-#endif    // FORWARD_LOG_H
+#endif    // __LOG_H__
