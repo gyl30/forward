@@ -89,9 +89,15 @@ struct BufferSizeCodec
 
 struct codec
 {
+#if BUFFER_SIZE_CODEC
     static SharedVector encode(const std::string& m) { return BufferSizeCodec::encode(m); }
     static std::string decode(const SharedVector& msg) { return BufferSizeCodec::decode(msg); }
     static uint32_t body_size(const SharedVector& buff) { return BufferSizeCodec::body_size(buff); }
+#else
+    static SharedVector encode(const std::string& m) { return FixedSizeCodec::encode(m); }
+    static std::string decode(const SharedVector& msg) { return FixedSizeCodec::decode(msg); }
+    static uint32_t body_size(const SharedVector& buff) { return FixedSizeCodec::body_size(buff); }
+#endif
 };
 
 }    // namespace MsgPkg
