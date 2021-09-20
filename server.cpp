@@ -1,7 +1,8 @@
 #include <memory>
 #include "connection.h"
 #include "log.h"
-
+#include "boost/asio/signal_set.hpp"
+#include <memory>
 class server_connection;
 using ConnectionPtr = std::shared_ptr<server_connection>;
 
@@ -165,6 +166,7 @@ class service
 
     void run()
     {
+        catch_signal();
         boost::system::error_code ec;
         io_context.run(ec);
         if (ec)
@@ -178,11 +180,23 @@ class service
     }
 
    private:
+    void catch_signal()
+    {
+        auto signals = std::make_shared<boost::asio::signal_set>(io_context, SIGINT, SIGTERM);
+        signals->async_wait(
+            [this, signals](auto, auto)
+            {
+                io_context.stop();
+                LOG_INFO << "signal quit";
+            });
+    }
+
+   private:
     void on_message(const ConnectionPtr& conn, const std::string& msg)
     {
         LOG_DEBUG << conn->address() << " " << msg;
         conn->write(msg);
-        //conn->shutdown();
+        // conn->shutdown();
     }
 
     void on_connected(const ConnectionPtr& conn)
