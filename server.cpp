@@ -2,6 +2,7 @@
 #include "connection.h"
 #include "log.h"
 #include "boost/asio/signal_set.hpp"
+#include "boost/any.hpp"
 #include <memory>
 class server_connection;
 using ConnectionPtr = std::shared_ptr<server_connection>;
@@ -17,7 +18,7 @@ class server_connection : public std::enable_shared_from_this<server_connection>
     {
         conn->set_on_message_cb([this, self = shared_from_this()](const auto& msg) { on_message(msg); });
         conn->set_on_close_cb([this, self = shared_from_this()]() { on_close(); });
-        conn->set_read_timeout(10);
+        conn->set_read_timeout(60);
         conn->startup();
     }
     void shutdown() { conn->shutdown(); }
@@ -25,6 +26,8 @@ class server_connection : public std::enable_shared_from_this<server_connection>
     void set_on_close_cb(const std::function<void(const ConnectionPtr&)>& cb) { close_cb_ = cb; }
     std::string address() const { return conn->address(); }
     void write(const std::string& msg) { conn->write(msg); }
+    void set_context(const boost::any& context) { this->context = context; }
+    boost::any get_context() const { return context; }
 
    private:
     void on_message(const std::string& msg)
@@ -47,6 +50,7 @@ class server_connection : public std::enable_shared_from_this<server_connection>
     std::function<void(const ConnectionPtr&)> close_cb_;
     std::function<void(const ConnectionPtr&, const std::string&)> msg_cb_;
     std::shared_ptr<connection> conn;
+    boost::any context;
 };
 class server
 {
@@ -166,6 +170,7 @@ class service
 
     void run()
     {
+        register_cmd_processor();
         catch_signal();
         boost::system::error_code ec;
         io_context.run(ec);
@@ -177,6 +182,7 @@ class service
         {
             LOG_DEBUG << "server stop ";
         }
+        unregister_cmd_processor();
     }
 
    private:
@@ -187,16 +193,41 @@ class service
             [this, signals](auto, auto)
             {
                 io_context.stop();
-                LOG_INFO << "signal quit";
+                LOG_INFO << "s  ignal quit";
+
             });
     }
 
    private:
+    void handshake(const ConnectionPtr& conn, const std::string& msg)
+    {
+
+        static const char kDelimiter = '$';
+        auto pos = msg.find(kDelimiter);
+        if (pos == std::string::npos)
+        {
+            return;
+        }
+        std::string id = msg.substr(0, pos);
+        conn->set_context(id);
+        conn->write(msg);
+    }
+    int peek_cmd(const std::string& msg)
+    {
+        int ch = msg[0];
+        return ch;
+    }
     void on_message(const ConnectionPtr& conn, const std::string& msg)
     {
         LOG_DEBUG << conn->address() << " " << msg;
-        conn->write(msg);
-        // conn->shutdown();
+        if (conn->get_context().empty())
+        {
+            handshake(conn, msg);
+        }
+        else
+        {
+            process_message(conn, msg);
+        }
     }
 
     void on_connected(const ConnectionPtr& conn)
@@ -209,8 +240,50 @@ class service
         LOG_WAR << conn->address() << " "
                 << "close";
     }
+    void process_message(const ConnectionPtr& conn, const std::string& msg)
+    {
+        std::string id = boost::any_cast<std::string>(conn->get_context());
+        LOG_DEBUG << "id " << id << " --> " << msg;
+        int cmd = peek_cmd(msg);
+        auto it = std::find_if(proc.begin(), proc.end(), [cmd](auto& c) { return c.cmd == cmd; });
+        if (it == proc.end())
+        {
+            return;
+        }
+
+        it->process(conn, msg);
+    }
+
+    void register_cmd_processor()
+    {
+        proc.push_back({'1', [](const ConnectionPtr& conn, const std::string& msg)
+                        {
+                            LOG_DEBUG << conn->address() << " --> 1 --> " << msg;
+                            conn->write(msg);
+                        }});
+        proc.push_back({'2', [](const ConnectionPtr& conn, const std::string& msg)
+                        {
+                            LOG_DEBUG << conn->address() << " --> 2 --> " << msg;
+
+                            conn->write(msg);
+                        }});
+        proc.push_back({'3', [](const ConnectionPtr& conn, const std::string& msg)
+                        {
+                            LOG_DEBUG << conn->address() << " --> 3 --> " << msg;
+                            conn->write(msg);
+                        }});
+    }
+    void unregister_cmd_processor() { proc.clear(); }
 
    private:
+    struct CmdProcess
+    {
+        int cmd;
+        std::function<void(const ConnectionPtr&, const std::string&)> process;
+    };
+
+   private:
+    std::vector<CmdProcess> proc;
     boost::asio::io_context io_context;
     server s{io_context, 3200};
 };

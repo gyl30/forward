@@ -54,8 +54,9 @@ class client : public std::enable_shared_from_this<client>
         conn->set_on_message_cb([this, self = shared_from_this()](const auto& msg) { on_message(msg); });
         conn->set_on_close_cb([this, self = shared_from_this()]() { on_close(); });
         conn->startup();
-        run_keep_timer();
+        handshake();
     }
+    void handshake() { conn->write("12345$"); }
 
     void run_keep_timer()
     {
@@ -63,7 +64,7 @@ class client : public std::enable_shared_from_this<client>
         {
             keep_timer = std::make_unique<boost::asio::steady_timer>(io_service);
         }
-        keep_timer->expires_from_now(std::chrono::milliseconds(10));
+        keep_timer->expires_from_now(std::chrono::seconds(1));
         keep_timer->async_wait(
             [this, self(shared_from_this())](boost::system::error_code ec)
             {
@@ -72,7 +73,7 @@ class client : public std::enable_shared_from_this<client>
                     LOG_ERROR << "keep timer failed " << ec.message();
                     return;
                 }
-                conn->write("hello");
+                conn->write("1world");
                 run_keep_timer();
             });
     }
@@ -97,7 +98,24 @@ class client : public std::enable_shared_from_this<client>
     }
 
    private:
-    void on_message(const std::string& msg) { LOG_DEBUG << "read " << msg; }
+    void on_message(const std::string& msg)
+    {
+        if (id.empty())
+        {
+            static const char kDelimiter = '$';
+            auto pos = msg.find(kDelimiter);
+            if (pos == std::string::npos)
+            {
+                return;
+            }
+            id = msg.substr(0, pos);
+            run_keep_timer();
+        }
+        else
+        {
+            LOG_DEBUG << "read " << msg;
+        }
+    }
     void on_close()
     {
         LOG_WAR << "client close";
@@ -120,6 +138,7 @@ class client : public std::enable_shared_from_this<client>
    private:
     std::string ip;
     uint16_t port;
+    std::string id;
     boost::asio::io_service io_service;
     std::unique_ptr<boost::asio::ip::tcp::socket> s;
     std::unique_ptr<boost::asio::steady_timer> timer;

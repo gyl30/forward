@@ -214,7 +214,7 @@ class connection : public std::enable_shared_from_this<connection>
                 }
                 else
                 {
-                    LOG_ERROR << "read from " << address_ << " failed " << ec.message();
+                    LOG_ERROR << address_ << "read failed " << ec.message();
                 }
                 if (er)
                 {
@@ -308,6 +308,7 @@ class connection : public std::enable_shared_from_this<connection>
     {
         if (timer->expiry() <= boost::asio::steady_timer::clock_type::now())
         {
+            LOG_ERROR << address_ << " timeout";
             close();
         }
         else
