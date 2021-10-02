@@ -147,6 +147,38 @@ class server
     std::function<void(const ConnectionPtr&, const std::string&)> msg_cb_;
     boost::asio::ip::tcp::acceptor acceptor_;
 };
+struct Channel
+{
+   public:
+    Channel(const std::string& id) : id_(id) {}
+    ~Channel() {}
+
+   public:
+    bool empty() const { return conns_.empty(); }
+    void add_conn(const ConnectionPtr& conn) { conns_.push_back(conn); }
+    void del_conn(const ConnectionPtr& conn)
+    {
+        conns_.erase(std::remove_if(conns_.begin(), conns_.end(), [&conn](const auto& c) { return c == conn; }),
+                     conns_.end());
+    }
+    void forward(const ConnectionPtr& conn, const std::string& msg)
+    {
+        for (const auto& c : conns_)
+        {
+            if (c == conn)
+            {
+                continue;
+            }
+            LOG_DEBUG << "forward channel " << id_ << " from " << conn->address() << " to " << c->address() << " --> "
+                      << msg;
+            c->write(msg);
+        }
+    }
+
+   private:
+    std::string id_;
+    std::vector<ConnectionPtr> conns_;
+};
 
 class service
 {
@@ -194,14 +226,12 @@ class service
             {
                 io_context.stop();
                 LOG_INFO << "s  ignal quit";
-
             });
     }
 
    private:
     void handshake(const ConnectionPtr& conn, const std::string& msg)
     {
-
         static const char kDelimiter = '$';
         auto pos = msg.find(kDelimiter);
         if (pos == std::string::npos)
@@ -211,6 +241,7 @@ class service
         std::string id = msg.substr(0, pos);
         conn->set_context(id);
         conn->write(msg);
+        add_conn(id, conn);
     }
     int peek_cmd(const std::string& msg)
     {
@@ -219,7 +250,7 @@ class service
     }
     void on_message(const ConnectionPtr& conn, const std::string& msg)
     {
-        LOG_DEBUG << conn->address() << " " << msg;
+        // LOG_DEBUG << conn->address() << " " << msg;
         if (conn->get_context().empty())
         {
             handshake(conn, msg);
@@ -239,11 +270,16 @@ class service
     {
         LOG_WAR << conn->address() << " "
                 << "close";
+        if (conn->get_context().empty())
+        {
+            return;
+        }
+        std::string id = boost::any_cast<std::string>(conn->get_context());
+        del_conn(id, conn);
     }
     void process_message(const ConnectionPtr& conn, const std::string& msg)
     {
         std::string id = boost::any_cast<std::string>(conn->get_context());
-        LOG_DEBUG << "id " << id << " --> " << msg;
         int cmd = peek_cmd(msg);
         auto it = std::find_if(proc.begin(), proc.end(), [cmd](auto& c) { return c.cmd == cmd; });
         if (it == proc.end())
@@ -256,11 +292,13 @@ class service
 
     void register_cmd_processor()
     {
-        proc.push_back({'1', [](const ConnectionPtr& conn, const std::string& msg)
-                        {
-                            LOG_DEBUG << conn->address() << " --> 1 --> " << msg;
-                            conn->write(msg);
-                        }});
+        auto fn = [this](const ConnectionPtr& conn, const std::string& msg)
+        {
+            LOG_DEBUG << conn->address() << " --> 1 --> " << msg;
+            std::string id = boost::any_cast<std::string>(conn->get_context());
+            forward(id, conn, msg);
+        };
+        proc.push_back({'1', fn});
         proc.push_back({'2', [](const ConnectionPtr& conn, const std::string& msg)
                         {
                             LOG_DEBUG << conn->address() << " --> 2 --> " << msg;
@@ -276,6 +314,48 @@ class service
     void unregister_cmd_processor() { proc.clear(); }
 
    private:
+    void del_conn(const std::string& channel_id, const ConnectionPtr& conn)
+    {
+        auto ch_it = channels_.find(channel_id);
+        if (ch_it == channels_.end())
+        {
+            return;
+        }
+        LOG_DEBUG << "del conn " << conn->address() << " from channel " << channel_id;
+        ch_it->second.del_conn(conn);
+        if (ch_it->second.empty())
+        {
+            channels_.erase(ch_it);
+            LOG_DEBUG << "channel " << channel_id << " empty closed";
+        }
+    }
+    void add_conn(const std::string& channel_id, const ConnectionPtr& conn)
+    {
+        LOG_DEBUG << "add conn " << conn->address() << " to channel " << channel_id;
+        auto ch_it = channels_.find(channel_id);
+        if (ch_it == channels_.end())
+        {
+            Channel ch(channel_id);
+            ch.add_conn(conn);
+            channels_.insert(std::make_pair(channel_id, ch));
+        }
+        else
+        {
+            ch_it->second.add_conn(conn);
+        }
+    }
+    void forward(const std::string& channel_id, const ConnectionPtr& conn, const std::string& msg)
+    {
+        auto ch_it = channels_.find(channel_id);
+        if (ch_it == channels_.end())
+        {
+            return;
+        }
+
+        ch_it->second.forward(conn, msg);
+    }
+
+   private:
     struct CmdProcess
     {
         int cmd;
@@ -284,6 +364,7 @@ class service
 
    private:
     std::vector<CmdProcess> proc;
+    std::map<std::string, Channel> channels_;
     boost::asio::io_context io_context;
     server s{io_context, 3200};
 };
