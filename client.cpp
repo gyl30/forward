@@ -3,6 +3,8 @@
 #include <chrono>
 #include <thread>
 
+static std::string msg;
+
 class client : public std::enable_shared_from_this<client>
 {
    public:
@@ -73,7 +75,7 @@ class client : public std::enable_shared_from_this<client>
                     LOG_ERROR << "keep timer failed " << ec.message();
                     return;
                 }
-                conn->write("1world");
+                conn->write(msg);
                 run_keep_timer();
             });
     }
@@ -148,6 +150,8 @@ class client : public std::enable_shared_from_this<client>
 
 int main(int argc, char* argv[])
 {
+    assert(argc == 2);
+    msg = argv[1];
     LOG_INFO << "start";
     std::make_shared<client>("127.0.0.1", 3200)->connect();
     LOG_INFO << "quit";
