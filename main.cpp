@@ -48,10 +48,10 @@ static std::string socket_address(const asio::ip::tcp::socket& socket)
 }
 //----------------------------------------------------------------------
 
-class chat_session : public std::enable_shared_from_this<chat_session>
+class connection : public std::enable_shared_from_this<connection>
 {
    public:
-    chat_session(tcp::socket socket, const std::string& address)
+    connection(tcp::socket socket, const std::string& address)
         : socket_(std::make_unique<tcp::socket>(std::move(socket))),
           address_(address),
           timer_(std::make_unique<asio::steady_timer>(socket_->get_executor()))
@@ -260,7 +260,7 @@ awaitable<void> listener(tcp::acceptor acceptor)
         {
             std::string address = socket_address(socket);
             LOG_DEBUG << address << " UP";
-            std::make_shared<chat_session>(std::move(socket), address)->start();
+            std::make_shared<connection>(std::move(socket), address)->start();
         }
     }
 }
