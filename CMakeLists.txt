@@ -15,9 +15,13 @@ find_package(Threads REQUIRED)
 
 include_directories("/home/gyl/fs/code/asio/asio/include")
 
-add_executable(server main.cpp)
+add_executable(server server.cpp)
+add_executable(client client.cpp)
 
 target_link_libraries(server
+        Threads::Threads
+        )
+target_link_libraries(client
         Threads::Threads
         )
 

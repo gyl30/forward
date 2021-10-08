@@ -216,13 +216,13 @@ class connection : public std::enable_shared_from_this<connection>
 
         std::string msg = write_msgs_.front();
         write_msgs_.pop_front();
+        LOG_DEBUG << "local --> " << address_ << " " << msg;
         co_await asio::async_write(*socket_, asio::buffer(msg), err);
         if (ec)
         {
             LOG_ERROR << address_ << " write failed " << ec.message();
             co_return -1;
         }
-        LOG_DEBUG << "local --> " << address_ << " " << msg;
         co_return 0;
     }
     awaitable<int> do_wait()
