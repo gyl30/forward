@@ -82,8 +82,11 @@ int main(int argc, char* argv[])
     LOG_INFO << argv[0] << " run on " << address << ":" << port;
 
     tcp::socket s(io);
-    tcp::endpoint ed{asio::ip::address::from_string(address), port};
-    co_spawn(io, client(std::move(s), std::move(ed)), detached);
+    for (int i = 0; i < 100; i++)
+    {
+        tcp::endpoint ed{asio::ip::address::from_string(address), port};
+        co_spawn(io, client(std::move(s), std::move(ed)), detached);
+    }
 
     asio::signal_set signals(io, SIGINT, SIGTERM);
     signals.async_wait([&](auto, auto) { io.stop(); });
