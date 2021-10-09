@@ -18,6 +18,7 @@
 #include <asio/use_awaitable.hpp>
 #include <asio/write.hpp>
 
+#include <chrono>
 #include "log.h"
 #include "protocol.h"
 
@@ -27,6 +28,34 @@ using asio::co_spawn;
 using asio::detached;
 using asio::redirect_error;
 using asio::use_awaitable;
+struct Rate
+{
+   public:
+    Rate(const std::string& id) : id(id) {}
+
+   public:
+    void start() { begin = std::chrono::high_resolution_clock::now(); }
+    void finished() { end = std::chrono::high_resolution_clock::now(); }
+    void update_read(uint32_t bytes) { read_bytes += bytes; }
+    void update_write(uint32_t bytes) { write_bytes += bytes; }
+
+    void dump()
+    {
+        std::chrono::duration<std::size_t, std::nano> dur = end - begin;
+        uint64_t time_count = std::chrono::duration_cast<std::chrono::milliseconds>(dur).count();
+        LOG_DEBUG << id << " write bytes " << write_bytes << " spend time " << time_count << " speed "
+                  << (write_bytes / time_count);
+        LOG_DEBUG << id << " read bytes " << read_bytes << " spend time " << time_count << " speed "
+                  << (read_bytes / time_count);
+    }
+
+   private:
+    std::string id;
+    uint64_t write_bytes = 0;
+    uint64_t read_bytes = 0;
+    std::chrono::high_resolution_clock::time_point begin;
+    std::chrono::high_resolution_clock::time_point end;
+};
 
 static std::string socket_address(const asio::ip::tcp::socket& socket)
 {
@@ -55,9 +84,16 @@ class connection : public std::enable_shared_from_this<connection>
     connection(tcp::socket socket, const std::string& address)
         : socket_(std::make_unique<tcp::socket>(std::move(socket))),
           address_(address),
+          r_(address),
           timer_(std::make_unique<asio::steady_timer>(socket_->get_executor()))
     {
         timer_->expires_at(std::chrono::steady_clock::time_point::max());
+        r_.start();
+    }
+    ~connection()
+    {
+        r_.finished();
+        r_.dump();
     }
 
    public:
@@ -100,6 +136,7 @@ class connection : public std::enable_shared_from_this<connection>
             {
                 break;
             }
+            r_.update_read(4 + body_size);
             LOG_DEBUG << "local <-- " << address_ << " " << body;
             deliver(body);
         }
@@ -222,6 +259,7 @@ class connection : public std::enable_shared_from_this<connection>
             LOG_ERROR << address_ << " write failed " << ec.message();
             co_return -1;
         }
+        r_.update_write(packet.size());
         co_return 0;
     }
     awaitable<int> do_wait()
@@ -239,6 +277,7 @@ class connection : public std::enable_shared_from_this<connection>
    private:
     std::unique_ptr<tcp::socket> socket_;
     std::string address_;
+    Rate r_;
     std::unique_ptr<asio::steady_timer> timer_;
     std::deque<std::string> write_msgs_;
 };
