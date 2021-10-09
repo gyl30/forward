@@ -19,7 +19,7 @@
 #include <asio/write.hpp>
 
 #include "log.h"
-
+#include "protocol.h"
 using asio::ip::tcp;
 using asio::awaitable;
 using asio::co_spawn;
@@ -58,20 +58,30 @@ awaitable<void> client(tcp::socket socket, asio::ip::tcp::endpoint ed)
         co_return;
     }
     LOG_DEBUG << "connect --> " << socket_address(socket);
-    char buff[256] = "0005hello";
-    co_await socket.async_send(asio::buffer(buff, sizeof(buff)), err);
-    if (ec)
     {
-        LOG_ERROR << "send failed " << ec.message();
-        co_return;
+        std::string msg = "hello world";
+        std::string packet = protocol::encode_header(msg.size()) + msg;
+        co_await socket.async_send(asio::buffer(packet), err);
+        if (ec)
+        {
+            LOG_ERROR << "send failed " << ec.message();
+            co_return;
+        }
     }
-    auto n = co_await socket.async_receive(asio::buffer(buff), err);
-    if (ec)
     {
-        LOG_ERROR << "receive failed " << ec.message();
-        co_return;
+        char header[4] = {0};
+        co_await socket.async_read_some(asio::buffer(header, sizeof header), err);
+        if (ec)
+        {
+            LOG_ERROR << "receive failed " << ec.message();
+            co_return;
+        }
+        uint32_t msg_size = protocol::decode_header(header);
+        std::string msg(msg_size, '\0');
+        co_await socket.async_read_some(asio::buffer(msg.data(), msg_size), err);
+
+        LOG_DEBUG << "receive finished " << msg;
     }
-    LOG_DEBUG << "receive finished " << n << " bytes";
 }
 
 int main(int argc, char* argv[])
@@ -82,7 +92,7 @@ int main(int argc, char* argv[])
     LOG_INFO << argv[0] << " run on " << address << ":" << port;
 
     tcp::socket s(io);
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 1000; i++)
     {
         tcp::endpoint ed{asio::ip::address::from_string(address), port};
         co_spawn(io, client(std::move(s), std::move(ed)), detached);

@@ -19,6 +19,7 @@
 #include <asio/write.hpp>
 
 #include "log.h"
+#include "protocol.h"
 
 using asio::ip::tcp;
 using asio::awaitable;
@@ -76,8 +77,7 @@ class connection : public std::enable_shared_from_this<connection>
         timer_->cancel_one(ec);
         if (ec)
         {
-            LOG_ERROR << address_ << " timer cancel once failed "
-                      << ec.message();
+            LOG_ERROR << address_ << " timer cancel once failed " << ec.message();
         }
         // else
         //{
@@ -134,8 +134,7 @@ class connection : public std::enable_shared_from_this<connection>
             timer_->cancel(ec);
             if (ec)
             {
-                LOG_ERROR << address_ << " timer cancel failed "
-                          << ec.message();
+                LOG_ERROR << address_ << " timer cancel failed " << ec.message();
             }
             else
             {
@@ -197,8 +196,7 @@ class connection : public std::enable_shared_from_this<connection>
         {
             char* b = buffer + read_bytes;
             auto bytes = size - read_bytes;
-            auto n =
-                co_await socket_->async_read_some(asio::buffer(b, bytes), err);
+            auto n = co_await socket_->async_read_some(asio::buffer(b, bytes), err);
             if (ec)
             {
                 co_return -1;
@@ -216,8 +214,9 @@ class connection : public std::enable_shared_from_this<connection>
 
         std::string msg = write_msgs_.front();
         write_msgs_.pop_front();
+        std::string packet = protocol::encode_header(msg.size()) + msg;
         LOG_DEBUG << "local --> " << address_ << " " << msg;
-        co_await asio::async_write(*socket_, asio::buffer(msg), err);
+        co_await asio::async_write(*socket_, asio::buffer(packet), err);
         if (ec)
         {
             LOG_ERROR << address_ << " write failed " << ec.message();
