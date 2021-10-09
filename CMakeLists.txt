@@ -13,7 +13,7 @@ add_definitions(-DBUFFER_SIZE_CODEC)
 
 find_package(Threads REQUIRED)
 
-include_directories("/home/gyl/fs/code/asio/asio/include")
+include_directories("third/asio/asio/include")
 
 add_executable(server server.cpp)
 add_executable(client client.cpp)
