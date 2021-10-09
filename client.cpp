@@ -18,6 +18,8 @@
 #include <asio/use_awaitable.hpp>
 #include <asio/write.hpp>
 
+#include <random>
+
 #include "log.h"
 #include "protocol.h"
 using asio::ip::tcp;
@@ -26,6 +28,25 @@ using asio::co_spawn;
 using asio::detached;
 using asio::redirect_error;
 using asio::use_awaitable;
+
+std::string random_string(uint32_t length)
+{
+    static const std::string str("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+
+    std::string tmp;
+    tmp.reserve(length);
+    while (tmp.size() < length)
+    {
+        tmp += str;
+    }
+    tmp.substr(0, length);
+
+    std::random_device rd;
+    std::mt19937 generator(rd());
+
+    std::shuffle(tmp.begin(), tmp.end(), generator);
+    return tmp;
+}
 
 static std::string socket_address(const asio::ip::tcp::socket& socket)
 {
@@ -59,7 +80,7 @@ awaitable<void> client(tcp::socket socket, asio::ip::tcp::endpoint ed)
     }
     LOG_DEBUG << "connect --> " << socket_address(socket);
     {
-        std::string msg = "hello world";
+        std::string msg = random_string(1024);
         std::string packet = protocol::encode_header(msg.size()) + msg;
         co_await socket.async_send(asio::buffer(packet), err);
         if (ec)
@@ -92,7 +113,7 @@ int main(int argc, char* argv[])
     LOG_INFO << argv[0] << " run on " << address << ":" << port;
 
     tcp::socket s(io);
-    for (int i = 0; i < 1000; i++)
+    for (int i = 0; i < 1; i++)
     {
         tcp::endpoint ed{asio::ip::address::from_string(address), port};
         co_spawn(io, client(std::move(s), std::move(ed)), detached);
